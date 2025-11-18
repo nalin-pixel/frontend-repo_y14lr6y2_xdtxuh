@@ -1,73 +1,89 @@
-function App() {
+import { useEffect, useMemo, useState } from 'react'
+import Dashboard from './components/Dashboard'
+import Filters from './components/Filters'
+import SummaryTable from './components/SummaryTable'
+
+const BACKEND = import.meta.env.VITE_BACKEND_URL || ''
+
+const defaultRange = () => {
+  const now = new Date()
+  const start = new Date(now)
+  start.setHours(0,0,0,0)
+  const end = new Date(now)
+  end.setHours(23,59,59,999)
+
+  const toLocal = (d) => new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,16)
+  return { start: toLocal(start), end: toLocal(end) }
+}
+
+export default function App() {
+  const [{ start, end }, setRange] = useState(defaultRange())
+  const [selectedTerminal, setSelectedTerminal] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [rows, setRows] = useState([])
+  const [totals, setTotals] = useState({ orders: 0, couriers: 0, amount: 0 })
+  const [terminals, setTerminals] = useState({})
+
+  const fetchData = async () => {
+    setLoading(true); setError('')
+    try {
+      const params = new URLSearchParams()
+      // Convert local datetime-local to ISO (without minutes offset issues)
+      const startISO = new Date(start).toISOString().slice(0,19)
+      const endISO = new Date(end).toISOString().slice(0,19)
+      params.set('start', startISO)
+      params.set('end', endISO)
+      if (selectedTerminal) params.set('terminal', selectedTerminal)
+
+      const res = await fetch(`${BACKEND}/api/jps/orders?` + params.toString())
+      if (!res.ok) throw new Error(await res.text())
+      const data = await res.json()
+      setRows(data.rows || [])
+      setTotals(data.totals || { orders: 0, couriers: 0, amount: 0 })
+      setTerminals(data.terminals || {})
+    } catch (e) {
+      setError(String(e.message || e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { fetchData() }, [])
+
+  const setStart = (v) => setRange(r => ({ ...r, start: v }))
+  const setEnd = (v) => setRange(r => ({ ...r, end: v }))
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
-      {/* Subtle pattern overlay */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(59,130,246,0.05),transparent_50%)]"></div>
+    <div className="min-h-screen bg-slate-900 text-white">
+      <div className="max-w-6xl mx-auto p-6 space-y-6">
+        <h1 className="text-2xl font-bold">Отчёт по курьерам</h1>
 
-      <div className="relative min-h-screen flex items-center justify-center p-8">
-        <div className="max-w-2xl w-full">
-          {/* Header with Flames icon */}
-          <div className="text-center mb-12">
-            <div className="inline-flex items-center justify-center mb-6">
-              <img
-                src="/flame-icon.svg"
-                alt="Flames"
-                className="w-24 h-24 drop-shadow-[0_0_25px_rgba(59,130,246,0.5)]"
-              />
-            </div>
+        <Dashboard totals={totals} />
 
-            <h1 className="text-5xl font-bold text-white mb-4 tracking-tight">
-              Flames Blue
-            </h1>
-
-            <p className="text-xl text-blue-200 mb-6">
-              Build applications through conversation
-            </p>
-          </div>
-
-          {/* Instructions */}
-          <div className="bg-slate-800/50 backdrop-blur-sm border border-blue-500/20 rounded-2xl p-8 shadow-xl mb-6">
-            <div className="flex items-start gap-4 mb-6">
-              <div className="flex-shrink-0 w-8 h-8 bg-blue-500 text-white rounded-lg flex items-center justify-center font-bold">
-                1
-              </div>
-              <div>
-                <h3 className="font-semibold text-white mb-1">Describe your idea</h3>
-                <p className="text-blue-200/80 text-sm">Use the chat panel on the left to tell the AI what you want to build</p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-4 mb-6">
-              <div className="flex-shrink-0 w-8 h-8 bg-blue-500 text-white rounded-lg flex items-center justify-center font-bold">
-                2
-              </div>
-              <div>
-                <h3 className="font-semibold text-white mb-1">Watch it build</h3>
-                <p className="text-blue-200/80 text-sm">Your app will appear in this preview as the AI generates the code</p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-4">
-              <div className="flex-shrink-0 w-8 h-8 bg-blue-500 text-white rounded-lg flex items-center justify-center font-bold">
-                3
-              </div>
-              <div>
-                <h3 className="font-semibold text-white mb-1">Refine and iterate</h3>
-                <p className="text-blue-200/80 text-sm">Continue the conversation to add features and make changes</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="text-center">
-            <p className="text-sm text-blue-300/60">
-              No coding required • Just describe what you want
-            </p>
-          </div>
+        <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+          <Filters
+            terminals={terminals}
+            selectedTerminal={selectedTerminal}
+            setSelectedTerminal={setSelectedTerminal}
+            start={start}
+            setStart={setStart}
+            end={end}
+            setEnd={setEnd}
+            onRefresh={fetchData}
+          />
         </div>
+
+        {error && (
+          <div className="p-3 rounded-lg border border-red-500/40 bg-red-900/30 text-red-200 text-sm">{error}</div>
+        )}
+
+        <SummaryTable rows={rows} />
+
+        {loading && (
+          <div className="text-center text-slate-300">Загрузка...</div>
+        )}
       </div>
     </div>
   )
 }
-
-export default App
